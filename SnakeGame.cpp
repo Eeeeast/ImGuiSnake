@@ -1,123 +1,132 @@
-#include <iostream>
-#include <thread>
 #include "SnakeGame.h"
+#include "Direction.h"
+#include "Colors.h"
+#include <thread>
+#include <chrono>
 #include <cassert>
-#include "Config.h"
+#include <iostream>
 
 SnakeGame::SnakeGame(unsigned char boardWidth, unsigned char boardHeight)
-    : frame{ Field2(boardWidth, boardHeight, Cell::EMPTY) },
-    currentScore{ 1 },
-    targetScore{ (size_t)boardWidth * boardHeight },
-    gameState{ GameState::Paused },
-    snakeDir{ Field2::DIR_DOWN },
-    nextSnakeDir{ Field2::DIR_DOWN }
+    : m_frame(boardWidth, boardHeight, ' '),
+    m_targetScore((size_t)(boardWidth) * boardHeight)
 {
-    assert(boardWidth > 1 && "The field is too small");
-    assert(boardHeight > 1 && "The field is too small");
 
-    frame.Clear();
-    snakeBody.push_back(*frame.TryGetCenterPos());
-    frame.SetCell(snakeBody.front(), Cell::SNAKE_HEAD);
-    apple = frame.TryFindFreeRandomPos();
-    frame.SetCell(*apple, Cell::APPLE);
+    assert(boardWidth > 1 && "Board width must be greater than 1");
+    assert(boardHeight > 1 && "Board height must be greater than 1");
+
+    restart();
 }
 
-void SnakeGame::ApplyFrameDelay() const
+void SnakeGame::applyFrameDelay() const
 {
     constexpr int BASE_DELAY_MS = 250;
     constexpr int MIN_DELAY_MS = 100;
     constexpr int REDUCTION_STEP = 10;
-    std::chrono::milliseconds delay = std::chrono::milliseconds(std::max(
+
+    int delayMs = std::max
+    (
         MIN_DELAY_MS,
-        BASE_DELAY_MS - REDUCTION_STEP * (int)currentScore
-    ));
-    std::this_thread::sleep_for(delay);
+        BASE_DELAY_MS - REDUCTION_STEP * (int)(m_currentScore)
+    );
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
 }
 
-void SnakeGame::ChangeSnakeDir(Vec2 desiredDir)
+void SnakeGame::changeDirection(Vec2 desiredDir)
 {
-    if (gameState == GameState::Paused)
-        gameState = GameState::Running;
+    if (m_gameState == GameState::Paused)
+        m_gameState = GameState::Running;
 
-    bool isOpposite =
-        snakeDir.first == -desiredDir.first
-        && snakeDir.second == -desiredDir.second;
-
-    if (snakeBody.size() > 1 && isOpposite)
+    if (m_snakeBody.size() > 1 && Direction::areOpposite(m_snakeDir, desiredDir))
         return;
-    nextSnakeDir = desiredDir;
+    m_nextSnakeDir = desiredDir;
 }
 
-void SnakeGame::ProcessUserInput()
+void SnakeGame::processUserInput()
 {
-    ImGuiIO& io = ImGui::GetIO();
-
-    if (ImGui::IsKeyDown(ImGuiKey_R) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-        RestartGame();
-    if (ImGui::IsKeyDown(ImGuiKey_Escape)) HandlePause();
-    if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow))
-        ChangeSnakeDir(Field2::DIR_UP);
-    if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow))
-        ChangeSnakeDir(Field2::DIR_DOWN);
-    if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow))
-        ChangeSnakeDir(Field2::DIR_LEFT);
-    if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow))
-        ChangeSnakeDir(Field2::DIR_RIGHT);
+    // Ввод обрабатывается в App.cpp через вызовы public методов
 }
 
-void SnakeGame::Update()
+void SnakeGame::update()
 {
-    if (gameState != GameState::Running)
+    if (m_gameState != GameState::Running)
         return;
 
-    snakeDir = nextSnakeDir;
-    UVec2 newHead = frame.GetShiftedPosition(snakeBody.front(), nextSnakeDir);
+    m_snakeDir = m_nextSnakeDir;
+    moveSnake();
+}
 
-    switch (frame.GetCell(newHead))
+void SnakeGame::moveSnake()
+{
+    UVec2 newHead = m_frame.getShiftedPosition(m_snakeBody.front(), m_nextSnakeDir);
+
+    checkCollision(newHead);
+
+    if (m_gameState != GameState::Running)
+        return;
+
+    m_snakeBody.push_front(newHead);
+
+    // Обновляем игровое поле
+    m_frame.clear();
+    for (const auto& segment : m_snakeBody)
+        m_frame.setCell(segment, CellSymbol::SNAKE_BODY);
+    m_frame.setCell(m_snakeBody.front(), CellSymbol::SNAKE_HEAD);
+
+    if (m_apple)
+        m_frame.setCell(*m_apple, CellSymbol::APPLE);
+}
+
+void SnakeGame::checkCollision(const UVec2& newHead)
+{
+    char cell = m_frame.getCell(newHead);
+
+    switch (cell)
     {
-    case Cell::APPLE:
-        currentScore++;
-        apple = frame.TryFindFreeRandomPos();
-        if (!apple) // Если не осталось свободных мест - победа
-            gameState = GameState::GameWin;
+    case CellSymbol::APPLE:
+        m_currentScore++;
+        spawnApple();
+        if (!m_apple)
+            m_gameState = GameState::GameWin;
         break;
-    case Cell::EMPTY:
-        snakeBody.pop_back();
+
+    case CellSymbol::EMPTY:
+        m_snakeBody.pop_back();
         break;
-    default:
-        gameState = currentScore == targetScore ? GameState::GameWin : GameState::GameOver;
-        return;
+
+    default: // Столкновение с собой
+        m_gameState = (m_currentScore == m_targetScore)
+            ? GameState::GameWin
+            : GameState::GameOver;
+        break;
     }
-
-    snakeBody.push_front(newHead);
-
-    frame.Clear();
-    for (UVec2 t : snakeBody)
-        frame.SetCell(t, Cell::SNAKE_BODY);
-    frame.SetCell(snakeBody.front(), Cell::SNAKE_HEAD);
-    if (apple)
-        frame.SetCell(*apple, Cell::APPLE);
 }
 
-void SnakeGame::HandlePause()
+void SnakeGame::spawnApple()
 {
-    if (gameState == GameState::Running)
-        gameState = GameState::Paused;
-    else if (gameState == GameState::Paused)
-        gameState = GameState::Running;
+    m_apple = m_frame.tryFindFreeRandomPos();
+    if (m_apple)
+        m_frame.setCell(*m_apple, CellSymbol::APPLE);
 }
 
-void SnakeGame::RestartGame()
+void SnakeGame::togglePause()
 {
-    frame.Clear();
-    snakeBody.clear();
-    currentScore = 1;
-    gameState = GameState::Running;
-    snakeDir = Field2::DIR_DOWN;
-    nextSnakeDir = snakeDir;
+    if (m_gameState == GameState::Running)
+        m_gameState = GameState::Paused;
+    else if (m_gameState == GameState::Paused)
+        m_gameState = GameState::Running;
+}
 
-    snakeBody.push_back(*frame.TryGetCenterPos());
-    frame.SetCell(snakeBody.front(), Cell::SNAKE_HEAD);
-    apple = frame.TryFindFreeRandomPos();
-    frame.SetCell(*apple, Cell::APPLE);
+void SnakeGame::restart()
+{
+    m_frame.clear();
+    m_snakeBody.clear();
+    m_currentScore = 1;
+    m_gameState = GameState::Running;
+    m_snakeDir = Direction::DOWN;
+    m_nextSnakeDir = Direction::DOWN;
+
+    m_snakeBody.push_back(*m_frame.tryGetCenterPos());
+    m_frame.setCell(m_snakeBody.front(), CellSymbol::SNAKE_HEAD);
+    spawnApple();
 }

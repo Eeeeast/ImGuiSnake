@@ -14,7 +14,7 @@
 #include <stdio.h>              // printf
 #include <SDL3/SDL.h>
 
-#include "App.cpp"
+#include "App.h"
 
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;

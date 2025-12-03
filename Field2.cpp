@@ -1,72 +1,65 @@
 #include "Field2.h"
+#include <cstdlib>
 #include <ctime>
 #include <cassert>
+#include <algorithm>
 
-Field2::Field2(const unsigned char width, const unsigned char height, char defaultCellFiller)
-	: size(height, width),
-	cellFiller(defaultCellFiller)
+Field2::Field2(unsigned char width, unsigned char height, char defaultCellFiller)
+    : m_size{ height, width }  // x = высота, y = ширина
+    , m_cellFiller(defaultCellFiller)
 {
-	std::srand((unsigned int)std::time({}));
-	freePositions.reserve((size_t)size.first * size.second);
-	Clear();
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
+    m_freePositions.reserve(static_cast<size_t>(m_size.x) * m_size.y);
+    clear();
 }
 
-void Field2::Clear()
+void Field2::clear()
 {
-	board = { size.first, std::vector<char>(size.second, cellFiller) };
+    m_board.assign(m_size.x, std::vector<char>(m_size.y, m_cellFiller));
 
-	freePositions.clear();
-	for (unsigned char row = 0; row < size.first; row++)
-		for (unsigned char col = 0; col < size.second; col++)
-			freePositions.push_back({ row, col });
+    m_freePositions.clear();
+    for (unsigned char row = 0; row < m_size.x; ++row)
+        for (unsigned char col = 0; col < m_size.y; ++col)
+            m_freePositions.push_back({ row, col });
 }
 
-std::optional<UVec2> Field2::TryFindFreeRandomPos() const
+std::optional<UVec2> Field2::tryFindFreeRandomPos() const
 {
-	if (freePositions.empty())
-		return std::nullopt;
-	return freePositions[std::rand() % freePositions.size()];
+    if (m_freePositions.empty())
+        return std::nullopt;
+    return m_freePositions[std::rand() % m_freePositions.size()];
 }
 
-void Field2::SetCell(UVec2 pos, char symbol)
+void Field2::setCell(UVec2 pos, char symbol)
 {
-	assert(pos.first < size.first);
-	assert(pos.second < size.second);
-	board[pos.first][pos.second] = symbol;
+    assert(pos.x < m_size.x && pos.y < m_size.y);
+    m_board[pos.x][pos.y] = symbol;
 
-	auto it = std::remove(freePositions.begin(), freePositions.end(), pos);
-	freePositions.erase(it, freePositions.end());
+    auto it = std::remove(m_freePositions.begin(), m_freePositions.end(), pos);
+    m_freePositions.erase(it, m_freePositions.end());
 
-	if (symbol == cellFiller)
-		freePositions.push_back(pos);
+    if (symbol == m_cellFiller)
+        m_freePositions.push_back(pos);
 }
 
-UVec2 Field2::GetShiftedPosition(UVec2 pos, Vec2 shift) const
+UVec2 Field2::getShiftedPosition(UVec2 pos, Vec2 shift) const
 {
-	assert(std::abs(shift.first) < size.first);
-	assert(std::abs(shift.second) < size.second);
-	return
-	{
-		((int)pos.first + shift.first + size.first) % size.first,
-		((int)pos.second + shift.second + size.second) % size.second,
-	};
+    return
+    {
+        static_cast<unsigned char>((static_cast<int>(pos.x) + shift.x + m_size.x) % m_size.x),
+        static_cast<unsigned char>((static_cast<int>(pos.y) + shift.y + m_size.y) % m_size.y)
+    };
 }
 
-char Field2::GetCell(UVec2 pos) const
+char Field2::getCell(UVec2 pos) const
 {
-	assert(pos.first < size.first);
-	assert(pos.second < size.second);
-	return board[pos.first][pos.second];
+    assert(pos.x < m_size.x && pos.y < m_size.y);
+    return m_board[pos.x][pos.y];
 }
 
-std::optional<UVec2> Field2::TryGetCenterPos() const
+std::optional<UVec2> Field2::tryGetCenterPos() const
 {
-	if (size.first == 0 || size.second == 0)
-		return std::nullopt;
-
-	return UVec2
-	{
-		size.first / 2,
-		size.second / 2
-	};
+    if (m_size.x == 0 || m_size.y == 0)
+        return std::nullopt;
+    return UVec2{ (unsigned char)(m_size.x / 2), (unsigned char)(m_size.y / 2) };
 }
